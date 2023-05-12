@@ -1,7 +1,8 @@
 /**
- *	Annihilation (Round version) mode - PvE Co-op GameMode
- *  Author : lethan
- *  Contact : lethanov@gmail.com
+ *  Annihilation (Survival/Round version) mode - PvE Co-op GameMode
+ *  Author : krispouille
+ *  Contact : krispouille@gmail.com
+ *  !!! Thank you Lethan (lethanov@gmail.com for the original script^^) !!!
  */
 
 // ---------------------------------- //
@@ -20,16 +21,21 @@
 #Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
 #Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+#Include "Libs/Nadeo/ShootMania/WeaponSwitch.Script.txt" as WeaponSwitch
 
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
 
-//#Setting S_GameMode 0 as _("GameMode : 0 - Rounds, 1 - Survival, 2 - Custom (Enable option below)")	//
+#Setting S_GameMode True as _("GameMode (0 - Rounds, 1 - Survival)")
+#Setting S_Difficulty True as _("Difficulty (0 - Hard, 1 - Harder)")
+#Setting S_Bots 35 as _("Bots (50 - Max.)")
+#Setting S_Boost False as _("Boost weapons  (0 - No, 1 - Yes)")
 
-#Const Description _("TYPE: PvE Co-Op\nOBJECTIVE: Eliminate all bots in the map before time lmit !\nINFOS\nGreen bots : Rocket\nRed bots : Nucleus\nBlue bots : Laser\nYellow bots : Arrow")
+#Const Description _("TYPE: PvE Co-Op\nOBJECTIVE: Eliminate all bots in the map !\nINFOS\nGame modes : Rounds or Survival\nDifficulty : Hard or Harder")
 #Const UITickPeriod 200
 #Const MaxRounds 6
+#Const MaxBots 50
 
 // ---------------------------------- //
 // Global var
@@ -47,10 +53,12 @@ declare Integer Round;
 
 declare Text GamePhase;
 declare Boolean CanPlay;
+declare Boolean LastGameMode;
 
 declare Integer _LatestUITickLayerTeam;
 declare CUILayer _LayerTeam;
 declare Text[Ident] _PlayerManialinkLines;
+declare Integer[Ident] _PlayerRespawns;
 
 // ---------------------------------- //
 // Set rules
@@ -58,11 +66,12 @@ declare Text[Ident] _PlayerManialinkLines;
 ***Rules***
 ***
 declare ModeName = "Annihilation";
-declare ModeRules = TextLib::Compose(_("Eliminate all bots in the map before the time is running out !\nGreen bots : Rocket\nRed bots : Nucleus\nBlue bots : Laser\nYellow bots : Arrow"), "$"^SpawnScreen::GetModeColor());
+declare ModeRules = TextLib::Compose(_("TYPE: PvE Co-Op\nOBJECTIVE: Eliminate all bots in the map !\nINFOS\nGame modes : Rounds or Survival\nDifficulty : Hard or Harder"), "$"^SpawnScreen::GetModeColor());
 SpawnScreen::ResetRulesSection();
-SpawnScreen::AddSubsection(_("Annihilation - PvE Co-Op Gamemode"), ModeRules, 20.);
+//SpawnScreen::AddSubsection(_("Annihilation - PvE Co-Op Gamemode"), ModeRules, 20.);
+SpawnScreen::AddSubsection(_("Annihilation - Shootroom"), ModeRules, 20.);
 SpawnScreen::CreatePrettyRules(ModeName);
-ModeStatusMessage = _("TYPE: PvE Co-Op\nOBJECTIVE: Eliminate all bots in the map before the time is running out !\nINFOS\nGreen bots : Rocket\nRed bots : Nucleus\nBlue bots : Laser\nYellow bots : Arrow");
+ModeStatusMessage = _("Fun script to warm-up with all weapons ^^\nI can't spend lots of time on this but I hope you will enjoy! (Bustaaa)\nLAST UPDATE: 2023-02-25T10:00:00.");
 ***
 
 // ---------------------------------- //
@@ -94,6 +103,13 @@ _LayerTeam.ManialinkPage = """
 // Set mode options
 UseClans = True;
 UseAllies = True;
+
+if (S_Difficulty==True) {
+	SpawnInvulnerabilityDuration = 0;
+	//CSmMode::SpawnDelayDuration
+}
+
+WeaponSwitch::Load();
 // ---------------------------------- //
 // Create the rules
 ---Rules---
@@ -123,7 +139,7 @@ KillStreak = 0;
 Score = 0;
 Round = 1;
 GamePhase = "checking";
-
+LastGameMode = S_GameMode;
 Score::MatchBegin();
 SM::SetupDefaultVisibility();
 
@@ -145,6 +161,7 @@ UIManager.UIAll.UISequence = CUIConfig::EUISequence::Intro;
 // ---------------------------------- //
 ***PlayLoop***
 ***
+WeaponSwitch::Loop();
 if(GamePhase == "checking"){
 	CheckSettings();
 	EndTime = 0;
@@ -153,14 +170,17 @@ if(GamePhase == "checking"){
 if(GamePhase == "newRound"){
 	PlaySound("newRoundIn", -1);
 	declare Msg = "";
-	
-	Msg = TextLib::Compose(_("Round %1/%2"), TextLib::ToText(Round), TextLib::ToText(MaxRounds));
+	if (S_GameMode==False) {
+		Msg = TextLib::Compose(_("Round %1/%2"), TextLib::ToText(Round), TextLib::ToText(MaxRounds));
+	} else {
+		Msg = TextLib::Compose(_("Survival"));
+	}
 	Message::SendBigMessage(Msg, 2000, 3, CUIConfig::EUISound::PhaseChange, 0);
 	
 	sleep(2000);
 	
-	CreateBots();
-	SpawnPlayers();
+	CreateBots(True);
+	SpawnPlayers(True);
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 	
 	
@@ -198,9 +218,40 @@ if(GamePhase == "newRound"){
 } else if(GamePhase == "play"){
 	ShowLayerTeam(True);
 	foreach (Event, PendingEvents) {
-		// ---------------------------------- //
+		if (S_Boost && Event.Type == CSmModeEvent::EType::OnActionEvent) {
+			declare UI <=> UIManager.GetUI(Event.Player);
+			declare Wp = "";
+			declare Md = "";
+			switch (Event.ActionSlot) {
+				case CSmModeEvent::EActionSlots::Activable1: {
+					SetPlayerWeapon(Event.Player, CSmMode::EWeapon::Laser, False);
+					Wp = "Laser";
+				}
+				case CSmModeEvent::EActionSlots::Activable2: {
+					SetPlayerWeapon(Event.Player, CSmMode::EWeapon::Nucleus, False);
+					Wp = "Nucleus";
+				}
+				case CSmModeEvent::EActionSlots::Activable3: {
+					SetPlayerWeapon(Event.Player, CSmMode::EWeapon::Arrow, False);
+					Wp = "Arrow";
+				}
+				case CSmModeEvent::EActionSlots::Activable4: {
+					SetPlayerWeapon(Event.Player, CSmMode::EWeapon::Rocket, False);
+					Wp = "Rocket";
+				}
+			}
+			if (Event.Player.AmmoGain==10.) {
+				Event.Player.AmmoGain = 1.;
+				Md = "normal";
+			} else {
+				Event.Player.AmmoGain = 10.;
+				Md = "boost";
+			}
+			UI.SendNotice(TextLib::Compose(_("$f90%1 (%2 mode) !"), Wp, Md), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::Notice, 0);
+			ChangePlayerState(Event.Player, True);
+		}
 		// On armor empty
-		if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty && S_GameMode==False) {
 			if(Event.Victim.IsFakePlayer){
 				Score += 1;
 				declare Msg = "";
@@ -225,14 +276,54 @@ if(GamePhase == "newRound"){
 				MatchInfo(True);
 				XmlRpc::OnArmorEmpty(Event);
 				PassOn(Event);
-			} else{
-				declare statusMsg = TextLib::Compose(_("%1 $m$a00has been eliminated !"), Event.Victim.Name);
-				ChangePlayerState(Event.Victim, False);
-				Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
+			//} else{
+			//  // to display message when eliminated
+			//	declare statusMsg = TextLib::Compose(_("%1 $m$a00has been eliminated !"), Event.Victim.Name);
+			//	ChangePlayerState(Event.Victim, False);
+			//	Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
+			//	XmlRpc::OnArmorEmpty(Event);
+			//	PassOn(Event);
+			}
+		}
+		// On shoot (change bot behaviour)
+		/*else if (Event.Type == CSmModeEvent::EType::OnShoot && S_GameMode==True && Event.Shooter.IsFakePlayer) {
+			declare ammo = GetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket);
+			if (ammo>1) {
+				Event.Shooter.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::IA;
+			}
+			XmlRpc::OnShoot(Event);
+			PassOn(Event);			
+		}*/
+		// On armor empty (survival)		
+		else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty && S_GameMode==True) {
+			if(Event.Victim.IsFakePlayer){
+				DestroyBotPlayer(Event.Victim);
+				declare BotsLeft = BotPlayers.count /*- Score*/;
+				if (S_Difficulty == False) {
+					if (BotsLeft <= MathLib::Rand(1,10)) {
+						//PlaySound("roar",0);
+						CreateBots(False);
+					} else if (MathLib::Rand(1,2)==1) {
+						CreateRandomBot();
+					}
+				} else {
+					//CreateRandomBot();
+					CreateBots(False);
+				}
+				Score += 1;
+				Message::SendStatusMessage(TextLib::Compose("%1 : %2 / %3", _("Eliminations"), TextLib::ToText(BotsLeft), TextLib::ToText(BotPlayers.count)), 2000, 3, CUIConfig::EUISound::ScoreProgress, MathLib::Rand(0,3));
+				MatchInfo(True);
+				XmlRpc::OnArmorEmpty(Event);
+				PassOn(Event);
+			} else {
+				//TODO survival.eliminated
+				//declare statusMsg = TextLib::Compose(_("%1 $m$a00has been eliminated !"), Event.Victim.Name);
+				//ChangePlayerState(Event.Victim, False);
+				//Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
 				XmlRpc::OnArmorEmpty(Event);
 				PassOn(Event);
 			}
-		} 
+		}
 		// ---------------------------------- //
 		// On hit
 		else if (Event.Type == CSmModeEvent::EType::OnHit) {
@@ -251,7 +342,32 @@ if(GamePhase == "newRound"){
 					Event.ShooterPoints = Points;
 					declare Distance = SendHitDistanceMessage(Event);
 					
-					SetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Laser, 1);
+					// in survival mode, every n hits increment retries
+					if (S_GameMode == True) {
+						declare freq = 30;
+						declare smod = Event.Shooter.Score.RoundPoints%freq;
+						if (smod==0 || smod==freq ) {
+							_PlayerRespawns[Event.Shooter.Id] += 1;
+							Event.Shooter.Score.Points += freq;
+							declare UI <=> UIManager.GetUI(Event.Shooter);
+							UI.SendNotice(TextLib::Compose(_("$f90+%1 kills validated !"), TextLib::ToText(freq)), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::VictoryPoint, 0);
+							Event.Shooter.Score.RoundPoints = 0;
+						}
+					}
+					
+					if (Event.Shooter != Null && !Event.Shooter.IsFakePlayer && Event.Shooter.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+						//declare ammo = GetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket);
+						//SetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, ammo);
+						//AddPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, ammo);
+						/*declare AmmoItemBuffDuration for Event.Shooter = 0.;
+						if (AmmoItemBuffDuration > 0.) {
+							declare AmmoItemBuffAmount for Event.Shooter = 1.;
+							declare TickAmount = AmmoItemBuffAmount / (AmmoItemBuffDuration * 1000. / Period);
+							AddPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, TickAmount);
+							declare UI <=> UIManager.GetUI(Event.Shooter);
+							UI.SendNotice(TextLib::Compose(_("$f90%1 tick"), TextLib::ToText(TickAmount)), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::Silence, 0);
+						}*/
+					}
 					
 					declare HitInterval = 700;
 					if(Now < LastHit + HitInterval){
@@ -263,15 +379,20 @@ if(GamePhase == "newRound"){
 						LastHit = Now;
 					}
 					
-					declare lifeStealChance = MathLib::Rand(0,1);
+					// restore armor on hit
+					Event.Shooter.Armor += 100;
+					declare UI <=> UIManager.GetUI(Event.Shooter);
+					UI.SendNotice(TextLib::Compose(_("$0a0+1 armor point !")), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::Silence, 0);
+
 					
-					if(lifeStealChance == 1){
-						Event.Shooter.Armor += 100;
-						declare UI <=> UIManager.GetUI(Event.Shooter);
-						UI.SendNotice(TextLib::Compose(_("$0a0+1 armor point !")), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::Silence, 0);
+					switch (Event.Victim.Armor) {
+						case 200:
+							Event.Victim.ForceColor = <1.0, 1.0, 1.0>;	
+							//Event.Victim.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Saunter;							
+							//Event.Victim.ForceColor = <1.0, 0.5, 0.0>;						
 					}
 					
-					if(Event.Victim.Armor == 100){
+					//if(Event.Victim.Armor == 100){
 						declare bonusTime = 0;
 						
 						switch (Players.count){
@@ -290,22 +411,22 @@ if(GamePhase == "newRound"){
 						EndTime += (bonusTime * 1000);
 						
 						if(KillStreak == 0){
-							if(bonusTime == 1){
+							/*if(bonusTime == 1){
 								Message::SendBigMessage(TextLib::Compose(_("+%1 second !"), TextLib::ToText(bonusTime)), 3000, 0);
 							} else {
 								Message::SendBigMessage(TextLib::Compose(_("+%1 seconds !"), TextLib::ToText(bonusTime)), 3000, 0);
-							}
+							}*/
 						} else {
-							if(bonusTime == 1){
+							/*if(bonusTime == 1){
 								Message::SendBigMessage(TextLib::Compose(_("+%1 second ! ($0f0+%2!$fff)"), TextLib::ToText(bonusTime+1), TextLib::ToText(1)), 3000, 0);
 							} else {
 								Message::SendBigMessage(TextLib::Compose(_("+%1 seconds ! ($0f0+%2!$fff)"), TextLib::ToText(bonusTime+1), TextLib::ToText(1)), 3000, 0);
-							}
+							}*/
 							EndTime += 1000;
 						}
 
 						Event.Damage = 100;
-					}
+					//}
 					XmlRpc::OnHit(Event);
 					PassOn(Event);
 				} else {
@@ -315,25 +436,35 @@ if(GamePhase == "newRound"){
 		} 
 		// ---------------------------------- //
 		// On player request respawn
-		else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-			if(Event.Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {			
-				declare statusMsg = TextLib::Compose(_("%1 $m$s$a00has been eliminated !"), Event.Player.Name);
-				Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
-				ChangePlayerState(Event.Player, False);
-			}
-			XmlRpc::OnPlayerRequestRespawn(Event);
-			PassOn(Event);
-		} else {
+		//else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		//	if(Event.Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {			
+		//		declare statusMsg = TextLib::Compose(_("%1 $m$s$a00has been eliminated !"), Event.Player.Name);
+		//		Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
+		//		ChangePlayerState(Event.Player, False);
+		//	}
+		//	XmlRpc::OnPlayerRequestRespawn(Event);
+		//	PassOn(Event);
+		//}	
+		else {
 			Discard(Event);
 		}
-	}	
+	}
+	
+	
+	//if (S_GameMode == True) {
+		// True  = enable spawn
+		// False = disable spawn 
+		SpawnPlayers(True);
+	//}	
 	TimerSound();
 	
-	if(EndTime < Now || Players.count == 0 || ClansNbPlayersAlive[1] == 0){
+	if(EndTime < Now || Players.count == 0 || ClansNbPlayersAlive[1] == 0 || LastGameMode != S_GameMode){
 		sleep(1000);
+		LastGameMode = S_GameMode;
 		GamePhase = "roundEnd";
 		
 	}
+
 
 } else if (GamePhase == "roundEnd") {
 	ShowLayerTeam(False);
@@ -343,7 +474,7 @@ if(GamePhase == "newRound"){
 	MatchInfo(False);
 	EndTime = 0;
 	declare Msg = "";
-	if(Score == BotPlayers.count) {
+	if(S_GameMode == False && Score >= BotPlayers.count) {
 		if(Round >= MaxRounds){
 			UnspawnPlayers();
 			Msg = TextLib::Compose(_("$0f0You have won the match !"));
@@ -400,6 +531,7 @@ Message::Loop();
 // ---------------------------------- //
 ***EndServer***
 ***
+WeaponSwitch::Unload();
 UIManager.UILayerDestroyAll();
 Interface::DestroyRank();
 SpawnScreen::DestroyRules();
@@ -424,11 +556,20 @@ Void ChangePlayerState(CSmPlayer Player, Boolean IsFree){
 
 Void PlaySound(Text soundName, Integer variant){
 	SoundLayerFirst.ManialinkPage = """""";
+
+	if(soundName == "roar"){
+		SoundLayerFirst.ManialinkPage = """<manialink version="2">
+		<audio looping="0" hidden="1" play="1" data="file://Media/Sounds/roar.ogg"/>
+		
+		</manialink>""";
+	}
+	
 	if(soundName == "cd"){
 		SoundLayerFirst.ManialinkPage = """<manialink version="2">
 		<audio looping="0" hidden="1" play="1" data="https://dl.dropboxusercontent.com/u/42719494/Maniaplanet/Sounds/cd{{{variant}}}.ogg"/>
 		</manialink>""";
 	}
+	
 	if(soundName == "30sec"){
 		SoundLayerFirst.ManialinkPage = """<manialink version="2">
 		<audio looping="0" hidden="1" play="1" data="https://dl.dropboxusercontent.com/u/42719494/Maniaplanet/Sounds/30s.ogg"/>
@@ -464,37 +605,65 @@ Void PlaySound(Text soundName, Integer variant){
 
 Void CreateAnniBot(Text _Type, CSmMapLandmark _Spawn){
 	declare newBot = CreateBotPlayer(NullId, 0);
-		
+	declare armorMax = 200;
+	declare accuracy = MathLib::Rand(0.6,1.0);
+	
+	//TODO howto ?
+	//CSmMode::SpawnInvulnerabilityDuration
+	//CSmMode::SpawnDelayDuration
+	
 	switch(_Type){
 		case "Laser":{
-			SetPlayerWeapon(newBot, CSmMode::EWeapon::Laser, False);
-			newBot.ForceColor = <0.0, 0.5, 0.5>;}
+			declare oneWeapon = CSmMode::EWeapon::Rocket;
+			if(S_GameMode && S_Difficulty) {
+				oneWeapon = CSmMode::EWeapon::Laser;
+			}
+			SetPlayerAmmoMax(newBot, oneWeapon, 1);
+			SetPlayerWeapon(newBot, oneWeapon, False);
+			//newBot.ForceColor = <0.0, 0.5, 0.5>;
+			newBot.ForceColor = <1.0, 0.5, 0.0>;
+		}
 		case "Rocket":{
+			SetPlayerAmmoMax(newBot, CSmMode::EWeapon::Rocket, 2);
 			SetPlayerWeapon(newBot, CSmMode::EWeapon::Rocket, False);
-			newBot.ForceColor = <0.0, 1.0, 0.0>;}
+			newBot.ForceColor = <0.0, 1.0, 0.0>;
+		}
 		case "Nucleus":{
-			SetPlayerWeapon(newBot, CSmMode::EWeapon::Nucleus, False);
-			newBot.ForceColor = <0.5, 0.0, 0.5>;}
+			SetPlayerAmmoMax(newBot, CSmMode::EWeapon::Rocket, 3);
+			SetPlayerWeapon(newBot, CSmMode::EWeapon::Rocket, False);
+			newBot.ForceColor = <0.5, 0.0, 0.5>;
+		}
 		case "Arrow":{
+			SetPlayerAmmoMax(newBot, CSmMode::EWeapon::Rocket, 4);
+			SetPlayerWeapon(newBot, CSmMode::EWeapon::Rocket, False);
+			newBot.ForceColor = <0.5, 0.5, 0.0>;
+			accuracy = 1.0;
+		}
+		case "Special":{
 			SetPlayerAmmoMax(newBot, CSmMode::EWeapon::Arrow, 2);
 			SetPlayerWeapon(newBot, CSmMode::EWeapon::Arrow, False);
-			newBot.ForceColor = <0.5, 0.5, 0.0>;}
-		case "Special":{
-			SetPlayerWeapon(newBot, CSmMode::EWeapon::Rocket, False);
-			newBot.ForceColor = <1.0, 0.5, 0.0>;}
+			newBot.ForceColor = <1.0, 0.5, 0.0>;
+		}
 	}
 	
 	newBot.Driver.AttackFilter = CSmPlayerDriver::ESmAttackFilter::OppositePlayers;
 	
 	if(_Type != "Special"){
-		newBot.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Saunter;
-		newBot.Driver.Saunter_AnchorPoint = _Spawn.Position;
-		newBot.Driver.Saunter_Radius = 10.;
+		if (S_GameMode == True) {
+			newBot.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::IA;
+		} else {
+			newBot.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Saunter;
+			newBot.Driver.Saunter_AnchorPoint = _Spawn.Position;
+			newBot.Driver.Saunter_Radius = 10.;
+		}
 	
-		newBot.Driver.AggroRadius = 50.;
-		newBot.Driver.DisengageDistance = 30.;
-		newBot.Driver.Accuracy = 0.6;
-		newBot.Driver.ShootPeriodMin = 500;
+		newBot.Driver.AggroRadius = MathLib::Rand(50.,100.); //50
+		newBot.Driver.DisengageDistance = MathLib::Rand(0.,30.); //30
+		newBot.Driver.Accuracy = 1.;
+		newBot.Driver.ShootPeriodMin = 10;//500
+		newBot.Driver.ShootPeriodMax = MathLib::Rand(10,500);
+		newBot.Driver.RocketAnticipation = True;
+		newBot.AmmoGain = 1.;
 	} else {
 		newBot.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Turret;
 		newBot.Driver.AggroRadius = 100.;
@@ -506,17 +675,57 @@ Void CreateAnniBot(Text _Type, CSmMapLandmark _Spawn){
 		newBot.AmmoGain = 10.0;
 	}
 	
+		
+	// on survival mode, force one armor
+	if (S_GameMode == True) {
+		armorMax = 100;
+	}
 	
 	newBot.Driver.Fov = 300.0;
-	newBot.ArmorMax = 100;
+	newBot.ArmorMax = armorMax; //400
 	
-	SpawnBotPlayer(newBot, 0, 100, _Spawn.BotPath, Now);
+	SpawnBotPlayer(newBot, 0, armorMax, _Spawn.BotPath, Now);
 }
 
-Void CreateBots(){
+Void CreateRandomBot(){
+		declare Spawn <=> MapLandmarks_BotPath[MathLib::Rand(0, MapLandmarks_BotPath.count-1)];						
+		if(Spawn.Tag == "BotPath"){
+			switch(MathLib::Rand(0,3)){
+				case 0: {
+					CreateAnniBot("Laser",Spawn);
+				}
+				case 1: {
+					CreateAnniBot("Rocket",Spawn);
+				}
+				case 2: {
+					CreateAnniBot("Nucleus",Spawn);
+				}
+				case 3: {
+					CreateAnniBot("Arrow",Spawn);
+				}
+			}
+		}		
+}
+
+Void CreateRandomBots(Boolean rs){
+	declare counter = S_Bots - (BotPlayers.count /*- Score*/);
+	if (rs == True) {
+		counter = S_Bots;
+	}
+	while(counter>0) {
+		CreateRandomBot();
+		counter = counter-1;
+	}
+}
+
+Void CreateRoundBots(){
 	//Bots creation
 	declare botCountId = 0;
-	while(botCountId < 30) {
+	declare botLimit = S_Bots;
+	if (botLimit > S_Bots) {
+		botLimit = S_Bots;
+	}
+	while(botCountId < botLimit) {
 		declare Spawn <=> MapLandmarks_BotPath[MathLib::Rand(0, MapLandmarks_BotPath.count-1)];
 			
 		declare botsWeapons = 0;
@@ -540,15 +749,15 @@ Void CreateBots(){
 			if(Round == 6){
 				botsWeapons = MathLib::Rand(1,4);
 			}
-			
-			if(botsWeapons == 1){
-				CreateAnniBot("Laser",Spawn);
+
+			if(botsWeapons == 1 /*|| S_Difficulty == True*/){
+				CreateAnniBot("Laser",Spawn); //Laser
 			} else if(botsWeapons == 2){
-				CreateAnniBot("Rocket",Spawn);
+				CreateAnniBot("Rocket",Spawn);//Rocket
 			} else if(botsWeapons == 3){
-				CreateAnniBot("Nucleus",Spawn);		
+				CreateAnniBot("Nucleus",Spawn);//Nucleus
 			} else if(botsWeapons == 4){
-				CreateAnniBot("Arrow", Spawn);		
+				CreateAnniBot("Arrow", Spawn);//Arrow
 			}
 			botCountId += 1;
 		}
@@ -559,18 +768,46 @@ Void CreateBots(){
 				CreateAnniBot("Special", BotPath);
 			}
 		}
+	}
+}
+
+Void CreateBots(Boolean rs){
+	if (S_GameMode == True) {
+		//Message::SendBigMessage(TextLib::Compose(_("NEW WAVE COMING !")), 3000, 0);
+		//PlaySound("roar",0);
+		CreateRandomBots(rs);
+	} else {
+		CreateRoundBots();
 	}		
 }
 
-Void SpawnPlayers() {
-	foreach (Player in Players) {
-		if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned){
+Void SpawnPlayers(Boolean rs){
+	foreach (Player in Players){
+		declare CanSpawn = True;
+		if (S_GameMode == True) {
+			if (rs == True) {
+				_PlayerRespawns[Player.Id] = 1;
+			} else if (!_PlayerRespawns.existskey(Player.Id)){
+				_PlayerRespawns[Player.Id] = 1;
+			}
+			CanSpawn = CanSpawn && (_PlayerRespawns[Player.Id] > 0);
+		}
+		if(Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && CanSpawn == True){
 			Player.ArmorMax = 400;
-			Player.AmmoGain = 1.8;	
-			SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
-			SetPlayerClan(Player, 1);
+			Player.AmmoGain = 1.;
+			//Player.AmmoGain = 10.;	
+			//SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
 			ChangePlayerState(Player, True);
-			SpawnPlayer(Player, 1, 400, MapLandmarks_PlayerSpawn[MathLib::Rand(0, MapLandmarks_PlayerSpawn.count-1)].PlayerSpawn, Now);
+			SetPlayerClan(Player, 1);
+			SpawnPlayer(Player, 1, 200, MapLandmarks_PlayerSpawn[MathLib::Rand(0, MapLandmarks_PlayerSpawn.count-1)].PlayerSpawn, Now);
+			if (S_GameMode == True) {
+				_PlayerRespawns[Player.Id] -= 1;
+				Player.Score.RoundPoints = 0;
+				if (rs == False) { 
+					Message::SendStatusMessage(TextLib::Compose(_("%1 $m$f90has %2 credit(s) left !"), Player.Name, TextLib::ToText(_PlayerRespawns[Player.Id])), 2000, 3, CUIConfig::EUISound::Silence, 0);
+				}
+			}
+
 		}
 	}
 }
@@ -649,7 +886,7 @@ Void DoKillStreakAnnounce(){
 }
 
 Void MatchInfo(Boolean show){
-	if(show){
+	if(show && S_GameMode == False){
 		MatchInfo.ManialinkPage = """
 			<frame posn="158 -76 0">
 				<label posn="0 0 1" halign="right" style="TextButtonNav" text="{{{_("$sEliminations")}}} : {{{Score}}}/{{{BotPlayers.count}}}" />
@@ -665,6 +902,8 @@ Void MatchInfo(Boolean show){
 }
 
 Void CheckSettings(){
+	declare PlayersLimit = 8;
+	
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	if (MapLandmarks_BotPath.count == 0){
 		declare Msg = TextLib::Compose(_("This map doesn't have bot spawns. Skipping..."));
@@ -677,9 +916,9 @@ Void CheckSettings(){
 			sleep(1000);
 			declare Msg = TextLib::Compose(_("No Players"));
 			Message::SendBigMessage(Msg, 1000, 3, CUIConfig::EUISound::Silence, 0);
-		} else if (Players.count > 4){
+		} else if (Players.count > PlayersLimit){
 			sleep(1000);
-			declare Msg = TextLib::Compose(_("Too much players. Max players script-forced to 4."));
+			declare Msg = TextLib::Compose(_("Too much players. Max players script-forced to 8."));
 			Message::SendBigMessage(Msg, 1000, 3, CUIConfig::EUISound::Silence, 0);
 		} else {
 			GamePhase = "newRound";
@@ -749,4 +988,11 @@ Void ShowLayerTeam(Boolean show) {
 			_LayerTeam.ManialinkPage = "";
 		}
 	}
+}
+
+Void SaveLastWeapon(CSmPlayer _Player) {
+	if (_Player == Null) return;
+		
+	declare LastAtkWeapon for _Player.User = CSmMode::EWeapon::Rocket;
+	LastAtkWeapon = WeaponSwitch::GetWeapon(_Player);
 }
