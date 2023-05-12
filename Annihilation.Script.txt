@@ -334,7 +334,7 @@ if(GamePhase == "newRound"){
 							_PlayerRespawns[Event.Shooter.Id] += 1;
 							Event.Shooter.Score.Points += freq;
 							declare UI <=> UIManager.GetUI(Event.Shooter);
-							UI.SendNotice(TextLib::Compose(_("$f90+%1 kills validated !"), TextLib::ToText(freq)), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::VictoryPoint, 0);
+							UI.SendNotice(TextLib::Compose(_("$f90+%1 kills confirmed !"), TextLib::ToText(freq)), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::VictoryPoint, 0);
 							Event.Shooter.Score.RoundPoints = 0;
 						}
 					}
