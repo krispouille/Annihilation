@@ -66,12 +66,12 @@ declare Integer[Ident] _PlayerRespawns;
 ***Rules***
 ***
 declare ModeName = "Annihilation";
-declare ModeRules = TextLib::Compose(_("TYPE: PvE Co-Op\nOBJECTIVE: Eliminate all bots in the map !\nINFOS\nGame modes : Rounds or Survival\nDifficulty : Hard or Harder"), "$"^SpawnScreen::GetModeColor());
+declare ModeRules = TextLib::Compose(_("TYPE: PvE Co-Op\nOBJECTIVE: Eliminate all bots in the map !\nINFOS\nGame modes : Rounds or Survival\nProject : https://github.com/krispouille/Annihilation"), "$"^SpawnScreen::GetModeColor());
 SpawnScreen::ResetRulesSection();
 //SpawnScreen::AddSubsection(_("Annihilation - PvE Co-Op Gamemode"), ModeRules, 20.);
 SpawnScreen::AddSubsection(_("Annihilation - Shootroom"), ModeRules, 20.);
 SpawnScreen::CreatePrettyRules(ModeName);
-ModeStatusMessage = _("Fun script to warm-up with all weapons ^^\nI can't spend lots of time on this but I hope you will enjoy! (Bustaaa)\nLAST UPDATE: 2023-02-25T10:00:00.");
+ModeStatusMessage = _("Warm-up with all weapons. Enjoy! (BuStaaa) ^^\n https://github.com/krispouille/Annihilation");
 ***
 
 // ---------------------------------- //
@@ -276,24 +276,8 @@ if(GamePhase == "newRound"){
 				MatchInfo(True);
 				XmlRpc::OnArmorEmpty(Event);
 				PassOn(Event);
-			//} else{
-			//  // to display message when eliminated
-			//	declare statusMsg = TextLib::Compose(_("%1 $m$a00has been eliminated !"), Event.Victim.Name);
-			//	ChangePlayerState(Event.Victim, False);
-			//	Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
-			//	XmlRpc::OnArmorEmpty(Event);
-			//	PassOn(Event);
 			}
 		}
-		// On shoot (change bot behaviour)
-		/*else if (Event.Type == CSmModeEvent::EType::OnShoot && S_GameMode==True && Event.Shooter.IsFakePlayer) {
-			declare ammo = GetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket);
-			if (ammo>1) {
-				Event.Shooter.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::IA;
-			}
-			XmlRpc::OnShoot(Event);
-			PassOn(Event);			
-		}*/
 		// On armor empty (survival)		
 		else if (Event.Type == CSmModeEvent::EType::OnArmorEmpty && S_GameMode==True) {
 			if(Event.Victim.IsFakePlayer){
@@ -355,20 +339,6 @@ if(GamePhase == "newRound"){
 						}
 					}
 					
-					if (Event.Shooter != Null && !Event.Shooter.IsFakePlayer && Event.Shooter.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
-						//declare ammo = GetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket);
-						//SetPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, ammo);
-						//AddPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, ammo);
-						/*declare AmmoItemBuffDuration for Event.Shooter = 0.;
-						if (AmmoItemBuffDuration > 0.) {
-							declare AmmoItemBuffAmount for Event.Shooter = 1.;
-							declare TickAmount = AmmoItemBuffAmount / (AmmoItemBuffDuration * 1000. / Period);
-							AddPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, TickAmount);
-							declare UI <=> UIManager.GetUI(Event.Shooter);
-							UI.SendNotice(TextLib::Compose(_("$f90%1 tick"), TextLib::ToText(TickAmount)), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::Silence, 0);
-						}*/
-					}
-					
 					declare HitInterval = 700;
 					if(Now < LastHit + HitInterval){
 						KillStreak += 1;
@@ -410,18 +380,7 @@ if(GamePhase == "newRound"){
 												
 						EndTime += (bonusTime * 1000);
 						
-						if(KillStreak == 0){
-							/*if(bonusTime == 1){
-								Message::SendBigMessage(TextLib::Compose(_("+%1 second !"), TextLib::ToText(bonusTime)), 3000, 0);
-							} else {
-								Message::SendBigMessage(TextLib::Compose(_("+%1 seconds !"), TextLib::ToText(bonusTime)), 3000, 0);
-							}*/
-						} else {
-							/*if(bonusTime == 1){
-								Message::SendBigMessage(TextLib::Compose(_("+%1 second ! ($0f0+%2!$fff)"), TextLib::ToText(bonusTime+1), TextLib::ToText(1)), 3000, 0);
-							} else {
-								Message::SendBigMessage(TextLib::Compose(_("+%1 seconds ! ($0f0+%2!$fff)"), TextLib::ToText(bonusTime+1), TextLib::ToText(1)), 3000, 0);
-							}*/
+						if(KillStreak > 0){
 							EndTime += 1000;
 						}
 
@@ -433,18 +392,7 @@ if(GamePhase == "newRound"){
 					Discard(Event);
 				}
 			}
-		} 
-		// ---------------------------------- //
-		// On player request respawn
-		//else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-		//	if(Event.Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {			
-		//		declare statusMsg = TextLib::Compose(_("%1 $m$s$a00has been eliminated !"), Event.Player.Name);
-		//		Message::SendStatusMessage(statusMsg, 2000, 3, CUIConfig::EUISound::EndMatch, 0);
-		//		ChangePlayerState(Event.Player, False);
-		//	}
-		//	XmlRpc::OnPlayerRequestRespawn(Event);
-		//	PassOn(Event);
-		//}	
+		}
 		else {
 			Discard(Event);
 		}
